@@ -1,0 +1,508 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>LOGデータ確認ツール</title>
+    <!-- Tailwind CSS for styling -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Chart.js library -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <!-- date-fns adapter for Chart.js time scale -->
+    <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns"></script>
+    <!-- Chart.js zoom plugin -->
+    <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-zoom@2.0.1/dist/chartjs-plugin-zoom.min.js"></script>
+    
+    <!-- Inter font from Google Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;700&display=swap" rel="stylesheet">
+    
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+            -webkit-font-smoothing: antialiased;
+            -moz-osx-font-smoothing: grayscale;
+        }
+        .chart-container {
+            height: 35vh;
+            position: relative;
+        }
+        .modal-content::-webkit-scrollbar { display: none; }
+        .modal-content { -ms-overflow-style: none; scrollbar-width: none; }
+        input[type=range]::-webkit-slider-thumb {
+            -webkit-appearance: none; appearance: none; width: 20px; height: 20px;
+            background: #4f46e5; cursor: pointer; border-radius: 50%; margin-top: -7px;
+        }
+        input[type=range]::-moz-range-thumb {
+            width: 20px; height: 20px; background: #4f46e5; cursor: pointer; border-radius: 50%;
+        }
+    </style>
+</head>
+<body class="bg-gray-100 flex items-center justify-center min-h-screen p-4 sm:p-6">
+
+    <div class="bg-white rounded-2xl shadow-2xl p-6 sm:p-8 w-full max-w-7xl">
+        <header class="text-center mb-8">
+            <h1 class="text-4xl font-bold text-gray-800">LOGデータ確認ツール</h1>
+        </header>
+        
+        <div class="flex flex-wrap justify-center gap-4 mb-4">
+            <button id="openFileModalBtn" class="bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-3 px-6 rounded-lg shadow-md transition-transform transform hover:scale-105 text-lg">
+                CSVファイル選択
+            </button>
+            <button id="openSettingsModalBtn" class="bg-gray-500 hover:bg-gray-600 text-white font-bold py-3 px-6 rounded-lg shadow-md transition-transform transform hover:scale-105 text-lg hidden">
+                表示データ設定
+            </button>
+        </div>
+
+        <div class="w-full p-4 bg-gray-50 rounded-lg mt-6 space-y-2">
+            <div class="chart-container">
+                <canvas id="topChart"></canvas>
+            </div>
+            <div class="chart-container">
+                <canvas id="bottomChart"></canvas>
+            </div>
+        </div>
+
+        <div id="sliderControls" class="mt-2 p-4 bg-gray-50 rounded-lg hidden">
+            <div class="grid grid-cols-1 lg:grid-cols-12 gap-x-4 gap-y-2 items-center">
+                <div class="lg:col-span-6">
+                    <label for="rangePan" class="block text-sm font-medium text-gray-700 text-center mb-1">表示範囲</label>
+                    <div class="flex items-center gap-1">
+                        <button id="panBigLeft" class="pan-btn p-2 rounded-md bg-gray-200 hover:bg-gray-300">◁◁</button>
+                        <button id="panSmallLeft" class="pan-btn p-2 rounded-md bg-gray-200 hover:bg-gray-300">◁</button>
+                        <input type="range" id="rangePan" class="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer" value="0">
+                        <button id="panSmallRight" class="pan-btn p-2 rounded-md bg-gray-200 hover:bg-gray-300">▷</button>
+                        <button id="panBigRight" class="pan-btn p-2 rounded-md bg-gray-200 hover:bg-gray-300">▷▷</button>
+                    </div>
+                </div>
+                <div class="lg:col-span-4">
+                     <label for="rangeZoom" class="block text-sm font-medium text-gray-700 text-center mb-1">ズーム</label>
+                    <input type="range" id="rangeZoom" min="1" max="500" value="1" class="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer">
+                </div>
+                <div class="lg:col-span-2 flex justify-center lg:justify-end mt-4 lg:mt-0">
+                     <button id="showAllDataBtn" class="bg-gray-600 hover:bg-gray-700 text-white font-bold py-2 px-4 rounded-md shadow-md transition-transform transform hover:scale-105 w-full lg:w-auto">
+                         全範囲を表示
+                     </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- File Upload Modal -->
+    <div id="fileModal" class="fixed inset-0 bg-gray-800 bg-opacity-75 flex items-center justify-center hidden z-50 p-4 modal">
+        <div class="bg-white rounded-lg shadow-xl w-full max-w-2xl transform transition-all" @click.stop>
+            <div class="flex justify-between items-center p-4 border-b">
+                <h2 class="text-xl font-bold text-gray-800">CSVファイルを選択</h2>
+                <button id="closeFileModalBtn" class="text-gray-500 hover:text-gray-800 text-3xl leading-none">&times;</button>
+            </div>
+            <div class="p-6">
+                <div id="dropzone" class="border-2 border-dashed border-gray-300 rounded-lg p-10 text-center cursor-pointer hover:border-indigo-500 bg-gray-50 transition">
+                    <p class="text-gray-500">ここにファイルをドラッグ＆ドロップ</p>
+                    <p class="text-gray-400 my-2">または</p>
+                    <input type="file" id="csvFile" accept=".csv" class="hidden">
+                    <button id="selectFileBtn" class="bg-indigo-500 text-white font-semibold py-2 px-4 rounded-lg hover:bg-indigo-600 transition">ファイルを選択</button>
+                </div>
+                <div id="fileStatusMessage" class="mt-4 text-center text-sm text-gray-600 h-5"></div>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Settings Modal -->
+    <div id="settingsModal" class="fixed inset-0 bg-gray-800 bg-opacity-75 flex items-center justify-center hidden z-50 p-4 modal">
+        <div class="bg-white rounded-lg shadow-xl w-full max-w-4xl transform transition-all modal-content">
+            <div class="flex justify-between items-center p-4 border-b">
+                <h2 class="text-xl font-bold text-gray-800">表示データ設定</h2>
+                <button id="closeSettingsModalBtn" class="text-gray-500 hover:text-gray-800 text-3xl leading-none">&times;</button>
+            </div>
+            <div class="p-6 max-h-[70vh] overflow-y-auto">
+                <div id="datasetControls" class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-x-4 gap-y-3">
+                    <!-- Dynamic content will be inserted here -->
+                </div>
+            </div>
+        </div>
+    </div>
+
+
+    <script>
+        document.addEventListener('DOMContentLoaded', () => {
+            let uploadedCsvData = null;
+            let topChart, bottomChart;
+            let allDatasets = [];
+            let timeRange = { min: null, max: null };
+            let datasetAssignments = {}; // Stores where to display each dataset ('top', 'bottom', 'none')
+
+            // Chart elements
+            const topCtx = document.getElementById('topChart').getContext('2d');
+            const bottomCtx = document.getElementById('bottomChart').getContext('2d');
+            const sliderControls = document.getElementById('sliderControls');
+            const datasetControls = document.getElementById('datasetControls');
+
+            // Modal elements
+            const fileModal = document.getElementById('fileModal');
+            const openFileModalBtn = document.getElementById('openFileModalBtn');
+            const closeFileModalBtn = document.getElementById('closeFileModalBtn');
+
+            const settingsModal = document.getElementById('settingsModal');
+            const openSettingsModalBtn = document.getElementById('openSettingsModalBtn');
+            const closeSettingsModalBtn = document.getElementById('closeSettingsModalBtn');
+
+            // File input elements
+            const dropzone = document.getElementById('dropzone');
+            const csvFileInput = document.getElementById('csvFile');
+            const selectFileBtn = document.getElementById('selectFileBtn');
+            const fileStatusMessage = document.getElementById('fileStatusMessage');
+            
+            // Slider and pan elements
+            const rangePan = document.getElementById('rangePan');
+            const rangeZoom = document.getElementById('rangeZoom');
+            const showAllDataBtn = document.getElementById('showAllDataBtn');
+            const panSmallLeft = document.getElementById('panSmallLeft');
+            const panSmallRight = document.getElementById('panSmallRight');
+            const panBigLeft = document.getElementById('panBigLeft');
+            const panBigRight = document.getElementById('panBigRight');
+
+            // --- Modal Handling ---
+            const setupModal = (modal, openBtn, closeBtn) => {
+                openBtn.addEventListener('click', () => modal.classList.remove('hidden'));
+                closeBtn.addEventListener('click', () => modal.classList.add('hidden'));
+                modal.addEventListener('click', (e) => {
+                    if (e.target === modal) {
+                        modal.classList.add('hidden');
+                    }
+                });
+            };
+            setupModal(fileModal, openFileModalBtn, closeFileModalBtn);
+            setupModal(settingsModal, openSettingsModalBtn, closeSettingsModalBtn);
+
+            // --- File Upload Handling ---
+            selectFileBtn.addEventListener('click', () => csvFileInput.click());
+            csvFileInput.addEventListener('change', (e) => handleFile(e.target.files[0]));
+
+            ['dragenter', 'dragover', 'dragleave', 'drop'].forEach(eventName => {
+                dropzone.addEventListener(eventName, preventDefaults, false);
+            });
+            ['dragenter', 'dragover'].forEach(eventName => {
+                dropzone.addEventListener(eventName, () => dropzone.classList.add('border-indigo-500', 'bg-indigo-50'), false);
+            });
+            ['dragleave', 'drop'].forEach(eventName => {
+                dropzone.addEventListener(eventName, () => dropzone.classList.remove('border-indigo-500', 'bg-indigo-50'), false);
+            });
+            dropzone.addEventListener('drop', (e) => handleFile(e.dataTransfer.files[0]), false);
+
+            function preventDefaults(e) {
+                e.preventDefault();
+                e.stopPropagation();
+            }
+
+            function handleFile(file) {
+                if (!file || !file.type.match('text/csv')) {
+                    fileStatusMessage.textContent = 'CSVファイルを選択してください。';
+                    return;
+                }
+                const reader = new FileReader();
+                reader.onload = (e) => {
+                    uploadedCsvData = e.target.result;
+                    fileStatusMessage.textContent = `"${file.name}" を正常に読み込みました。`;
+                    fileModal.classList.add('hidden');
+                    processCsvData();
+                    setupDatasetControls();
+                    createOrUpdateCharts({ resetZoom: true });
+                    sliderControls.classList.remove('hidden');
+                    openSettingsModalBtn.classList.remove('hidden');
+                };
+                reader.onerror = () => {
+                    fileStatusMessage.textContent = 'ファイルの読み込みに失敗しました。';
+                };
+                reader.readAsText(file);
+            }
+
+            // --- Chart Logic ---
+            function processCsvData() {
+                if (!uploadedCsvData) return;
+
+                const lines = uploadedCsvData.trim().split('\n');
+                let headerIdx = -1;
+                for (let i = 0; i < lines.length; i++) {
+                    if (lines[i].includes('Date,Time')) {
+                        headerIdx = i;
+                        break;
+                    }
+                }
+
+                if (headerIdx === -1) {
+                    alert('CSVファイルに"Date,Time"を含むヘッダー行が見つかりません。');
+                    return;
+                }
+
+                const headers = lines[headerIdx].split(',');
+                const dateIndex = headers.indexOf('Date');
+                const timeIndex = headers.indexOf('Time');
+
+                if (dateIndex === -1 || timeIndex === -1) {
+                    alert('CSVファイルに"Date"または"Time"列が見つかりません。');
+                    return;
+                }
+
+                const dataRows = lines.slice(headerIdx + 1).map(line => line.split(','));
+                const dataColumns = headers.filter(h => h && h.trim() !== 'Date' && h.trim() !== 'Time');
+                const datasets = [];
+                const colors = [
+                    '#4f46e5', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', 
+                    '#3b82f6', '#ec4899', '#6b7280', '#14b8a6', '#d946ef'
+                ];
+
+                dataColumns.forEach((label, index) => {
+                    const columnIndex = headers.indexOf(label);
+                    const data = dataRows.map(row => {
+                        if (row.length <= Math.max(dateIndex, timeIndex) || !row[dateIndex] || !row[timeIndex]) return null;
+                        const dateTimeStr = `20${row[dateIndex].replace(/-/g, '/')} ${row[timeIndex]}`;
+                        const timestamp = new Date(dateTimeStr);
+                        const value = parseFloat(row[columnIndex]);
+                        return { x: timestamp.getTime(), y: isNaN(value) ? null : value };
+                    }).filter(Boolean);
+                    
+                    if (data.length > 0) {
+                        datasets.push({
+                            label: label.trim(),
+                            data: data,
+                            borderColor: colors[index % colors.length],
+                            tension: 0.1,
+                            fill: false,
+                            pointRadius: 0,
+                            borderWidth: 1.5
+                        });
+                    }
+                });
+                
+                allDatasets = datasets;
+
+                if (datasets.length > 0 && datasets[0].data.length > 0) {
+                    let minTime = Infinity;
+                    let maxTime = -Infinity;
+                    datasets.forEach(ds => {
+                        ds.data.forEach(d => {
+                             minTime = Math.min(minTime, d.x);
+                             maxTime = Math.max(maxTime, d.x);
+                        });
+                    });
+                    timeRange.min = minTime;
+                    timeRange.max = maxTime;
+                } else {
+                    timeRange.min = null;
+                    timeRange.max = null;
+                }
+            }
+            
+            function setupDatasetControls() {
+                datasetControls.innerHTML = '';
+                datasetAssignments = {};
+                allDatasets.forEach((dataset, index) => {
+                    const controlId = `ds-control-${index}`;
+                    // Default assignment: first to top, second to bottom, others to none
+                    let defaultPosition = 'none';
+                    if (index === 0) defaultPosition = 'top';
+                    if (index === 1) defaultPosition = 'bottom';
+                    datasetAssignments[dataset.label] = defaultPosition;
+
+                    const controlHTML = `
+                        <div class="p-2 rounded-md bg-white shadow-sm border border-gray-200">
+                            <label class="block text-sm font-semibold text-gray-800 truncate mb-2" title="${dataset.label}">${dataset.label}</label>
+                            <div class="flex items-center justify-around text-xs">
+                                <div class="flex items-center">
+                                    <input type="radio" id="${controlId}-top" name="${controlId}" value="top" ${defaultPosition === 'top' ? 'checked' : ''} class="h-4 w-4 text-indigo-600 focus:ring-indigo-500 border-gray-300">
+                                    <label for="${controlId}-top" class="ml-1 text-gray-600">上</label>
+                                </div>
+                                <div class="flex items-center">
+                                    <input type="radio" id="${controlId}-bottom" name="${controlId}" value="bottom" ${defaultPosition === 'bottom' ? 'checked' : ''} class="h-4 w-4 text-indigo-600 focus:ring-indigo-500 border-gray-300">
+                                    <label for="${controlId}-bottom" class="ml-1 text-gray-600">下</label>
+                                </div>
+                                <div class="flex items-center">
+                                    <input type="radio" id="${controlId}-none" name="${controlId}" value="none" ${defaultPosition === 'none' ? 'checked' : ''} class="h-4 w-4 text-indigo-600 focus:ring-indigo-500 border-gray-300">
+                                    <label for="${controlId}-none" class="ml-1 text-gray-600">非表示</label>
+                                </div>
+                            </div>
+                        </div>`;
+                    datasetControls.insertAdjacentHTML('beforeend', controlHTML);
+
+                    document.getElementsByName(controlId).forEach(radio => {
+                        radio.addEventListener('change', (e) => {
+                            datasetAssignments[dataset.label] = e.target.value;
+                            createOrUpdateCharts({ resetZoom: false });
+                        });
+                    });
+                });
+            }
+
+            function createOrUpdateCharts({ resetZoom = false }) {
+                if (allDatasets.length === 0) return;
+
+                let savedRange = null;
+                if (topChart && !resetZoom) {
+                    savedRange = { min: topChart.scales.x.min, max: topChart.scales.x.max };
+                }
+
+                if (topChart) topChart.destroy();
+                if (bottomChart) bottomChart.destroy();
+
+                const topDatasets = allDatasets.filter(ds => datasetAssignments[ds.label] === 'top');
+                const bottomDatasets = allDatasets.filter(ds => datasetAssignments[ds.label] === 'bottom');
+
+                // Calculate a combined Y-axis range for consistent scaling
+                let allYValues = [];
+                topDatasets.forEach(ds => allYValues.push(...ds.data.map(d => d.y)));
+                bottomDatasets.forEach(ds => allYValues.push(...ds.data.map(d => d.y)));
+
+                const minY = Math.min(...allYValues);
+                const maxY = Math.max(...allYValues);
+
+                const createChartConfig = (datasets) => ({
+                    type: 'line',
+                    data: { datasets: datasets },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        scales: {
+                            x: {
+                                type: 'time',
+                                time: { unit: 'minute', tooltipFormat: 'HH:mm:ss.SSS', displayFormats: { minute: 'HH:mm', second: 'HH:mm:ss' }},
+                                title: { display: false },
+                                // Added options to sync the x-axis alignment
+                                alignTo: 'x',
+                                alignTicks: true,
+                            },
+                            y: { 
+                                title: { display: true, text: '値' },
+                                // Fixed Y-axis range for consistent alignment
+                                min: minY,
+                                max: maxY,
+                            }
+                        },
+                        plugins: {
+                            legend: { position: 'top', align: 'end' },
+                            title: { display: false },
+                            tooltip: { mode: 'index', intersect: false },
+                            zoom: { pan: { enabled: false }, zoom: { enabled: false } }
+                        },
+                        interaction: { mode: 'nearest', axis: 'x', intersect: false }
+                    }
+                });
+
+                const topConfig = createChartConfig(topDatasets);
+                const bottomConfig = createChartConfig(bottomDatasets);
+                
+                // Sync x-axis labels
+                topConfig.options.scales.x.ticks = { ...topConfig.options.scales.x.ticks, display: false }; // Hide labels on top chart
+                bottomConfig.options.scales.x.title.display = true;
+                bottomConfig.options.scales.x.title.text = '時間';
+
+                if (savedRange && savedRange.min && savedRange.max) {
+                    topConfig.options.scales.x.min = bottomConfig.options.scales.x.min = savedRange.min;
+                    topConfig.options.scales.x.max = bottomConfig.options.scales.x.max = savedRange.max;
+                }
+
+                topChart = new Chart(topCtx, topConfig);
+                bottomChart = new Chart(bottomCtx, bottomConfig);
+
+                if (resetZoom) {
+                    resetZoomAndPan();
+                }
+            }
+
+            // --- Slider and Pan/Zoom Logic ---
+            function updatePanSliderResolution() {
+                if (!topChart || !timeRange.min || (timeRange.max - timeRange.min) === 0) {
+                    rangePan.max = "100"; rangePan.step = "1"; return;
+                }
+
+                const zoomValue = parseInt(rangeZoom.value);
+                const totalDuration = timeRange.max - timeRange.min;
+                const viewDuration = totalDuration / (1 + Math.pow(zoomValue / 25, 2));
+                const scrollableDuration = totalDuration - viewDuration;
+
+                if (scrollableDuration <= 0) {
+                    rangePan.max = "100"; rangePan.step = "1"; rangePan.disabled = true; return;
+                }
+                rangePan.disabled = false;
+                
+                const newMax = 10000;
+                rangePan.max = newMax.toString();
+                rangePan.step = (viewDuration < 2000) ? Math.max(1, Math.floor(newMax / (scrollableDuration / 1000))).toString() : "1";
+            }
+            
+            function updateChartRange() {
+                if (!topChart || !bottomChart || !timeRange.min) return;
+                
+                const zoomValue = parseInt(rangeZoom.value);
+                const panValue = parseFloat(rangePan.value);
+                const panMax = parseFloat(rangePan.max);
+
+                const totalDuration = timeRange.max - timeRange.min;
+                const viewDuration = totalDuration / (1 + Math.pow(zoomValue / 25, 2));
+
+                const panRatio = panMax > 0 ? panValue / panMax : 0;
+                const viewStart = timeRange.min + (totalDuration - viewDuration) * panRatio;
+                const viewEnd = viewStart + viewDuration;
+
+                topChart.options.scales.x.min = bottomChart.options.scales.x.min = viewStart;
+                topChart.options.scales.x.max = bottomChart.options.scales.x.max = viewEnd;
+                topChart.update('none');
+                bottomChart.update('none');
+            }
+
+            function resetZoomAndPan() {
+                if(!topChart) return;
+                rangePan.value = 0;
+                rangeZoom.value = 1;
+                updatePanSliderResolution();
+                topChart.resetZoom('none'); 
+                bottomChart.resetZoom('none'); 
+            }
+
+            rangePan.addEventListener('input', updateChartRange);
+
+            rangeZoom.addEventListener('input', () => {
+                const oldMax = parseFloat(rangePan.max) || 100;
+                const oldVal = parseFloat(rangePan.value);
+                const panRatio = oldMax > 0 ? oldVal / oldMax : 0;
+                updatePanSliderResolution();
+                const newMax = parseFloat(rangePan.max);
+                rangePan.value = panRatio * newMax;
+                updateChartRange();
+            });
+
+            showAllDataBtn.addEventListener('click', resetZoomAndPan);
+
+            function panByPercentage(percentage) {
+                if (!topChart || !timeRange.min) return;
+                
+                const currentMin = topChart.scales.x.min;
+                const currentMax = topChart.scales.x.max;
+                const viewDuration = currentMax - currentMin;
+                const scrollMs = viewDuration * (percentage / 100);
+                
+                const totalDuration = timeRange.max - timeRange.min;
+                const scrollableDuration = totalDuration - viewDuration;
+                if (scrollableDuration <= 0) return;
+
+                const panMax = parseFloat(rangePan.max);
+                const panValueChange = (scrollMs * panMax) / scrollableDuration;
+                
+                let currentVal = parseFloat(rangePan.value);
+                currentVal += panValueChange;
+
+                if (currentVal < 0) currentVal = 0;
+                if (currentVal > panMax) currentVal = panMax;
+
+                rangePan.value = currentVal;
+                updateChartRange();
+            }
+            
+            panSmallLeft.addEventListener('click', () => panByPercentage(-30));
+            panSmallRight.addEventListener('click', () => panByPercentage(30));
+            panBigLeft.addEventListener('click', () => panByPercentage(-100));
+            panBigRight.addEventListener('click', () => panByPercentage(100));
+        });
+    </script>
+</body>
+</html>
